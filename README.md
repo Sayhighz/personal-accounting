@@ -1,164 +1,186 @@
-# 💰 Automated Income & Expense Tracker
+# Automated Income & Expense Tracker
 
-ระบบบันทึกรายรับ-รายจ่ายอัตโนมัติผ่าน LINE พัฒนาด้วย N8N Workflow Automation เชื่อมต่อกับ Google Sheets เพื่อช่วยให้ผู้ใช้งานทั่วไปและธุรกิจขนาดเล็กสามารถบริหารจัดการการเงินได้อย่างสะดวก แม่นยำ และเป็นระบบ
-
----
-
-## 🔍 Problem & Solution
-
-### ปัญหา (Problem)
-การบันทึกรายรับ-รายจ่ายในปัจจุบันยังพึ่งพาการจดบันทึกด้วยมือหรือแอปพลิเคชันที่ซับซ้อน ส่งผลให้เกิดปัญหาหลัก ได้แก่
-
-- ผู้ใช้มักลืมบันทึกรายการ เนื่องจากต้องเปิดแอปแยกและกรอกข้อมูลหลายขั้นตอน
-- การจดด้วยมือเสี่ยงต่อความผิดพลาดและข้อมูลสูญหาย
-- ขาดรายงานสรุปรายเดือนที่ชัดเจนและเข้าถึงได้ง่าย
-- ไม่มีระบบแจ้งเตือนหรือติดตามยอดแบบเรียลไทม์
-
-### แนวทางแก้ไข (Solution)
-พัฒนาระบบ Automation ที่ให้ผู้ใช้บันทึกข้อมูลผ่าน **LINE** ซึ่งเป็นแอปพลิเคชันที่คุ้นเคยในชีวิตประจำวัน โดยข้อมูลจะถูกบันทึกลง **Google Sheets** โดยอัตโนมัติ และระบบจะสร้างรายงานสรุปรายเดือนพร้อมส่งกลับให้ผู้ใช้โดยไม่ต้องดำเนินการใด ๆ เพิ่มเติม
+> ระบบบันทึกรายรับ-รายจ่ายอัตโนมัติผ่าน LINE + n8n + Google Sheets
 
 ---
 
-## 🏗️ System Architecture
+## Problem Statement
 
-### Overview Diagram
-
-```mermaid
-graph TB
-    User(["👤 ผู้ใช้งาน"])
-
-    subgraph LINE["LINE Platform"]
-        LM["LINE Messaging API"]
-        LW["Webhook Endpoint"]
-    end
-
-    subgraph N8N["N8N Workflow Engine"]
-        direction TB
-        WH["📥 Webhook Node\n(รับข้อความจาก LINE)"]
-        PP["⚙️ Process Node\n(แยกประเภท / Parse ข้อมูล)"]
-        RT["↩️ Reply Node\n(ส่งยืนยันกลับผู้ใช้)"]
-        SC["⏰ Scheduled Trigger\n(ทุกวันที่ 1 ของเดือน)"]
-        RG["📊 Report Generator\n(คำนวณยอดรวมรายเดือน)"]
-        RS["📤 Report Sender\n(ส่งรายงานผ่าน LINE)"]
-    end
-
-    subgraph GS["Google Sheets"]
-        DL["📋 Daily Records Sheet\n(รายการรายวัน)"]
-        MS["📈 Monthly Summary Sheet\n(สรุปรายเดือน)"]
-    end
-
-    User -->|"พิมพ์ข้อความ\nเช่น รายจ่าย 200 ค่าน้ำ"| LM
-    LM --> LW
-    LW --> WH
-    WH --> PP
-    PP -->|"Append รายการ"| DL
-    PP --> RT
-    RT -->|"ยืนยันการบันทึก"| LM
-    LM -->|"Reply"| User
-
-    SC --> RG
-    RG -->|"ดึงข้อมูล"| DL
-    RG -->|"บันทึกสรุป"| MS
-    RG --> RS
-    RS -->|"ส่งรายงานสรุป"| LM
-    LM -->|"รายงานรายเดือน"| User
-```
-
-### Data Flow — บันทึกรายการ (Real-time)
-
-```mermaid
-sequenceDiagram
-    actor User as 👤 ผู้ใช้
-    participant LINE as LINE Messaging API
-    participant N8N as N8N Webhook Node
-    participant Parse as Process Node
-    participant GS as Google Sheets
-
-    User->>LINE: ส่งข้อความ "รายจ่าย 200 ค่าน้ำ"
-    LINE->>N8N: POST Webhook (event payload)
-    N8N->>Parse: ส่งข้อความให้ประมวลผล
-    Parse->>Parse: แยกประเภท / จำนวน / หมวดหมู่
-    Parse->>GS: Append แถวใหม่ลง Daily Records
-    GS-->>Parse: Success
-    Parse->>LINE: ส่ง Reply Message
-    LINE-->>User: "บันทึกแล้ว: รายจ่าย 200 บาท (ค่าน้ำ) ✅"
-```
-
-### Data Flow — รายงานสรุปรายเดือน (Scheduled)
-
-```mermaid
-sequenceDiagram
-    participant CRON as ⏰ Scheduled Trigger
-    participant N8N as N8N Workflow
-    participant GS as Google Sheets
-    participant LINE as LINE Messaging API
-    actor User as 👤 ผู้ใช้
-
-    CRON->>N8N: Trigger (วันที่ 1 ของเดือน 08:00)
-    N8N->>GS: ดึงข้อมูลเดือนที่ผ่านมา
-    GS-->>N8N: รายการทั้งหมด
-    N8N->>N8N: คำนวณยอดรายรับ / รายจ่าย / คงเหลือ
-    N8N->>GS: บันทึกสรุปลง Monthly Summary Sheet
-    N8N->>LINE: ส่งรายงานสรุป
-    LINE-->>User: รายงานประจำเดือน (ยอดรวม + รายหมวดหมู่)
-```
-
----
-
-## ✨ Features
-
-- **บันทึกง่าย ผ่าน LINE** — พิมพ์ข้อความสั้น ๆ เช่น `รายรับ 500 ขายสินค้า` ระบบจัดการให้ทันที
-- **บันทึกอัตโนมัติลง Google Sheets** — ไม่ต้องกรอกเองทุกครั้ง ข้อมูลถูก Append ต่อท้ายอัตโนมัติ
-- **รองรับหมวดหมู่รายการ** — อาหาร, เดินทาง, สาธารณูปโภค, รายได้จากงาน ฯลฯ
-- **รายงานสรุปรายเดือนอัตโนมัติ** — ระบบส่งรายงานยอดรวมทุกต้นเดือนผ่าน LINE โดยไม่ต้องร้องขอ
-- **เข้าถึงข้อมูลได้ทุกอุปกรณ์** — ข้อมูลทั้งหมดเก็บใน Google Sheets
-
----
-
-## 🛠️ Tech Stack
-
-| เครื่องมือ | บทบาทในระบบ |
+| | |
 |---|---|
-| **N8N** | Workflow Automation Engine หลัก |
+| **WHO** | ผู้ใช้ทั่วไปและธุรกิจขนาดเล็กที่ต้องการบริหารการเงิน |
+| **WHAT** | บันทึกรายการด้วยมือยุ่งยาก ข้อมูลผิดพลาด ขาดรายงานสรุป |
+| **WHEN** | ทุกวันที่มีการใช้จ่ายหรือรับเงิน |
+| **HOW MUCH** | เสียเวลาหลายนาทีต่อรายการ + ความเสี่ยงบริหารงบประมาณผิดพลาด |
+
+---
+
+## Solution
+
+สร้าง **Automated Income & Expense Tracker** ที่ให้ผู้ใช้พิมพ์ข้อความสั้น ๆ ผ่าน LINE
+แล้วระบบบันทึกและสรุปรายงานให้อัตโนมัติ — ไม่ต้องเปิดแอปอื่นเพิ่ม
+
+---
+
+## System Architecture
+
+### High-Level Overview
+
+```mermaid
+flowchart TB
+    User(["👤 User"])
+
+    subgraph EXT ["External Services"]
+        direction LR
+        LINE["LINE Messaging API"]
+        GS["Google Sheets"]
+    end
+
+    subgraph N8N ["n8n Workflow Engine"]
+        direction TB
+        WH["Webhook Trigger"]
+        RT["Real-time Flow"]
+        SC["Schedule Trigger\n(1st of Month)"]
+        MR["Monthly Report Flow"]
+    end
+
+    User -- "พิมพ์ข้อความ" --> LINE
+    LINE -- "Webhook POST" --> WH
+    WH --> RT
+    RT -- "Append Row" --> GS
+    RT -- "Reply ยืนยัน" --> LINE
+    LINE -- "ข้อความยืนยัน" --> User
+
+    SC --> MR
+    MR -- "Read Data" --> GS
+    MR -- "Write Summary" --> GS
+    MR -- "Push รายงาน" --> LINE
+    LINE -- "รายงานรายเดือน" --> User
+```
+
+---
+
+### Real-time Flow (บันทึกรายการ)
+
+```mermaid
+flowchart LR
+    A(["LINE\nWebhook"]) --> B["IF Node\nแยกประเภท"]
+
+    B -- "รายรับ" --> C1["Parse\nIncome"]
+    B -- "รายจ่าย" --> C2["Parse\nExpense"]
+    B -- "ไม่รู้จัก" --> C3["Help\nMessage"]
+
+    C1 --> D["Append\nGoogle Sheets"]
+    C2 --> D
+    D --> E["Reply\nLINE"]
+    C3 --> E
+```
+
+---
+
+### Monthly Report Flow (สรุปรายเดือน)
+
+```mermaid
+flowchart LR
+    F(["Schedule\n1st of Month"]) --> G["Read\nSheets Data"]
+    G --> H["Calculate\nIncome / Expense / Balance"]
+    H --> I["Write\nMonthly Summary"]
+    I --> J["Push\nLINE Report"]
+```
+
+---
+
+### Sequence — บันทึกรายการ Real-time
+
+```mermaid
+sequenceDiagram
+    actor User as 👤 User
+    participant LINE as LINE API
+    participant N8N  as n8n Engine
+    participant GS   as Google Sheets
+
+    User  ->> LINE : "รายจ่าย 200 ค่าอาหาร"
+    LINE  ->> N8N  : Webhook POST
+    N8N   ->> N8N  : Parse ประเภท / จำนวน / หมวดหมู่
+    N8N   ->> GS   : Append Row
+    GS   -->> N8N  : OK
+    N8N   ->> LINE : Reply Message
+    LINE -->> User : "บันทึกรายจ่าย 200 บาท (ค่าอาหาร) ✅"
+```
+
+---
+
+### Sequence — รายงานสรุปรายเดือน
+
+```mermaid
+sequenceDiagram
+    participant CRON as ⏰ Schedule
+    participant N8N  as n8n Engine
+    participant GS   as Google Sheets
+    participant LINE as LINE API
+    actor User as 👤 User
+
+    CRON  ->> N8N  : Trigger (วันที่ 1 เวลา 08:00)
+    N8N   ->> GS   : Read รายการเดือนที่ผ่านมา
+    GS   -->> N8N  : รายการทั้งหมด
+    N8N   ->> N8N  : คำนวณยอดรวม
+    N8N   ->> GS   : Write Monthly Summary
+    N8N   ->> LINE : Push รายงาน
+    LINE -->> User : รายงานสรุปประจำเดือน
+```
+
+---
+
+## Tech Stack
+
+| เครื่องมือ | บทบาท |
+|---|---|
+| **n8n** | Workflow Automation Engine หลัก |
 | **LINE Messaging API** | ช่องทางรับ-ส่งข้อความกับผู้ใช้ |
 | **Google Sheets API** | ฐานข้อมูลและรายงานสรุป |
-| **Webhook Node (N8N)** | รับ Trigger จาก LINE |
-| **Scheduled Trigger (N8N)** | รันสรุปรายงานอัตโนมัติรายเดือน |
+| **Webhook Node** | รับ Trigger จาก LINE |
+| **IF Node** | แยกประเภทรายการ |
+| **Code Node** | ประมวลผลและจัดรูปแบบข้อมูล |
+| **Schedule Trigger** | รันสรุปรายงานอัตโนมัติรายเดือน |
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
-personal-accounting/
+automated-expense-tracker/
+│
 ├── workflows/
-│   ├── line-webhook.json          # N8N workflow: รับและบันทึกรายการจาก LINE
-│   └── monthly-report.json        # N8N workflow: สรุปรายงานประจำเดือน
+│   ├── realtime-tracker.json     # n8n workflow: บันทึกรายการ real-time
+│   └── monthly-report.json       # n8n workflow: สรุปรายงานรายเดือน
+│
 ├── sheets/
-│   └── template.xlsx              # Template Google Sheets (Daily + Monthly)
+│   └── template.xlsx             # Template Google Sheets (Daily + Monthly)
+│
 ├── docs/
-│   ├── setup-guide.md             # คู่มือการติดตั้งและตั้งค่าระบบ
-│   ├── line-message-format.md     # รูปแบบข้อความที่รองรับ
-│   └── screenshots/               # รูปภาพตัวอย่างการใช้งาน
+│   ├── setup-guide.md            # คู่มือติดตั้งและตั้งค่าระบบ
+│   ├── line-setup.md             # วิธีสร้าง LINE Bot และตั้งค่า Webhook
+│   └── message-format.md         # รูปแบบข้อความที่ระบบรองรับ
+│
 ├── Project_Proposal.md
 └── README.md
 ```
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### สิ่งที่ต้องเตรียม
 
-1. **N8N** — ติดตั้ง self-hosted หรือใช้ N8N Cloud
-2. **LINE Developers Account** — สร้าง Messaging API Channel
-3. **Google Account** — เปิดใช้งาน Google Sheets API และสร้าง Service Account
+- **n8n** — self-hosted หรือ n8n Cloud
+- **LINE Developers Account** — สร้าง Messaging API Channel
+- **Google Account** — เปิดใช้ Google Sheets API + Service Account
 
-### ขั้นตอนการติดตั้ง
+### ขั้นตอน
 
 1. Clone repository นี้
-2. Import workflow จากโฟลเดอร์ `workflows/` เข้า N8N
-3. ตั้งค่า Credentials ใน N8N (LINE Token + Google Sheets)
+2. Import workflows จาก `workflows/` เข้า n8n
+3. ตั้งค่า Credentials ใน n8n (LINE Channel Access Token + Google Sheets)
 4. ตั้งค่า Webhook URL ใน LINE Developers Console
 5. Copy `sheets/template.xlsx` ไปยัง Google Drive และแชร์ให้ Service Account
 6. ทดสอบส่งข้อความผ่าน LINE
@@ -167,17 +189,17 @@ personal-accounting/
 
 ---
 
-## 💬 รูปแบบข้อความที่รองรับ
+## Message Format
 
-| รูปแบบ | ตัวอย่าง | หมายเหตุ |
-|---|---|---|
-| รายรับ | `รายรับ 500 ขายสินค้า` | ระบุจำนวนเงินและรายละเอียด |
-| รายจ่าย | `รายจ่าย 200 ค่าน้ำ` | ระบุจำนวนเงินและรายละเอียด |
-| ดูยอด | `ยอด` | ดูยอดคงเหลือปัจจุบัน |
+| รูปแบบ | ตัวอย่าง |
+|---|---|
+| บันทึกรายรับ | `รายรับ 500 ขายสินค้า` |
+| บันทึกรายจ่าย | `รายจ่าย 200 ค่าอาหาร` |
+| ดูยอดคงเหลือ | `ยอด` |
 
 ---
 
-## 👨‍💻 Team
+## Team
 
 | ชื่อ | รหัสนักศึกษา |
 |---|---|

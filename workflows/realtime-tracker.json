@@ -1,0 +1,561 @@
+{
+  "name": "Realtime Income/Expense Tracker",
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "message"
+        ]
+      },
+      "id": "f152ba62-0647-4865-89c2-432d6a550955",
+      "name": "Line Messaging Trigger",
+      "type": "@aotoki/n8n-nodes-line-messaging.lineMessagingTrigger",
+      "typeVersion": 1,
+      "position": [
+        2768,
+        3184
+      ],
+      "webhookId": "6120be41-df5f-4f5d-a164-38a294e6d978",
+      "credentials": {
+        "lineMessagingApi": {
+          "id": "6sRcG3QbhxlVeV1p",
+          "name": "Line Messaging account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const event = $input.first().json;\nconst text = event.message?.text?.trim();\nconst replyToken = event.replyToken;\nconst userId = event.source?.userId;\n\nif (!text) return [];\n\nreturn [{ json: { text, replyToken, userId } }];"
+      },
+      "id": "0db3a876-fea9-4a23-a8ec-9c5847c28dad",
+      "name": "Extract Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2992,
+        3184
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { text, replyToken, userId } = $input.first().json;\n\n// ตรวจ pattern 1: คำว่า \"สรุป\" (regex)\nif (/^สรุป$/i.test(text)) {\n  return [{ json: { text, replyToken, userId, intent: 'summary' } }];\n}\n\n// ตรวจ pattern 2: มีตัวเลข → บันทึกรายการ\nconst amountMatch = text.match(/(\\d+(?:\\.\\d+)?)/)\nif (amountMatch) {\n  const amount = parseFloat(amountMatch[1]);\n  const description = text.replace(amountMatch[0], '').replace(/บาท/g, '').trim();\n  const now = new Date();\n  const dateStr = now.toLocaleDateString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit' });\n  const timeStr = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });\n  return [{ json: { text, replyToken, userId, intent: 'record', amount, description, date: dateStr, time: timeStr } }];\n}\n\n// ไม่ตรง pattern ใด → unknown\nreturn [{ json: { text, replyToken, userId, intent: 'unknown' } }];"
+      },
+      "id": "f3050eb6-a8b8-4916-ab93-ad577c3f7318",
+      "name": "Route Intent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3216,
+        3184
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "summary",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "summary"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "record",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "record"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "2ab5d71d-139d-4749-aa4f-2bf49831d9b8",
+      "name": "Switch Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        3440,
+        3184
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { text, replyToken } = $input.first().json;\nconst replyMessage = `ไม่เข้าใจคำสั่ง \"${text}\"\\n\\n📝 วิธีใช้งาน:\\n• บันทึกรายการ → พิมพ์รายการพร้อมจำนวนเงิน\\n  เช่น: ข้าวมันไก่ 45, ค่าไฟ 800, รับเงินเดือน 15000\\n• ดูสรุป → พิมพ์ว่า สรุป`;\nreturn [{ json: { replyToken, replyMessage } }];"
+      },
+      "id": "d6d8a492-43a9-4b42-b6ad-6a178b5bf6cc",
+      "name": "Help Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3664,
+        3616
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=รายการ: {{ $json.description }}\nจำนวน: {{ $json.amount }} บาท\n\nวิเคราะห์รายการนี้และตอบในรูปแบบ JSON เท่านั้น ห้ามมีข้อความอื่น:\n{\"type\": \"รายรับ หรือ รายจ่าย\", \"category\": \"ชื่อหมวดหมู่\"}",
+        "options": {
+          "systemMessage": "คุณเป็นผู้ช่วยจัดประเภทและหมวดหมู่รายการทางการเงิน\n\nหน้าที่:\n1. วิเคราะห์ว่ารายการนี้คือ \"รายรับ\" หรือ \"รายจ่าย\"\n2. จัดหมวดหมู่ที่เหมาะสม\n\nหมวดหมู่รายรับ: เงินเดือน, ขายสินค้า, ค่าจ้าง, โบนัส, ดอกเบี้ย, ลงทุน, อื่น ๆ\nหมวดหมู่รายจ่าย: อาหาร, เดินทาง, ที่พัก, สุขภาพ, บันเทิง, ช้อปปิ้ง, ค่าน้ำค่าไฟ, การศึกษา, อื่น ๆ\n\nตอบในรูปแบบ JSON เท่านั้น ห้ามมีข้อความอื่นนอก JSON\nตัวอย่าง: {\"type\": \"รายจ่าย\", \"category\": \"อาหาร\"}"
+        }
+      },
+      "id": "3ff934d6-aeda-408a-9899-c0a7fca247ac",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        3680,
+        3200
+      ]
+    },
+    {
+      "parameters": {
+        "model": "bytedance/ui-tars-1.5-7b",
+        "options": {}
+      },
+      "id": "503c339f-24fd-46a4-a5cb-cc29c5d8cc73",
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        3696,
+        3392
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "aRsg34yZTNhdBoz2",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentOutput = $input.first().json.output?.trim() || '{}';\nconst parsed = $('Route Intent').first().json;\n\nlet type = 'รายจ่าย';\nlet category = 'อื่น ๆ';\n\ntry {\n  const jsonMatch = agentOutput.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    const result = JSON.parse(jsonMatch[0]);\n    type = result.type || type;\n    category = result.category || category;\n  }\n} catch (e) {}\n\nreturn [{\n  json: {\n    ...parsed,\n    type,\n    category,\n    replyMessage: `บันทึก${type} ${Number(parsed.amount).toLocaleString()} บาท\\nรายการ: ${parsed.description}\\nหมวดหมู่: ${category} ✅`\n  }\n}];"
+      },
+      "id": "07733390-335a-4d94-8aa2-91cbfd19c231",
+      "name": "Extract Type & Category",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4000,
+        3200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1valcOtfmNGLnUrXI3GtAsPeTeO8WYLSpQCkYot1Ermg",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Transactions",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.date }}",
+            "Time": "={{ $json.time }}",
+            "Type": "={{ $json.type }}",
+            "Amount": "={{ $json.amount }}",
+            "Description": "={{ $json.description }}",
+            "Category": "={{ $json.category }}",
+            "UserID": "={{ $json.userId }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Time",
+              "displayName": "Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Type",
+              "displayName": "Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Amount",
+              "displayName": "Amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Description",
+              "displayName": "Description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "UserID",
+              "displayName": "UserID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8d878eef-c431-429e-a26a-11ca36c3aa6c",
+      "name": "Append Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        4192,
+        3200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hq45LXNr48tTQz1v",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1valcOtfmNGLnUrXI3GtAsPeTeO8WYLSpQCkYot1Ermg",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Transactions",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1valcOtfmNGLnUrXI3GtAsPeTeO8WYLSpQCkYot1Ermg/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "87e1b737-2b6a-4ed6-b591-17ccc823339a",
+      "name": "Read Transactions",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        3984,
+        3008
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hq45LXNr48tTQz1v",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const userId = $('Route Intent').first().json.userId;\nconst replyToken = $('Route Intent').first().json.replyToken;\nconst rows = $input.all().map(i => i.json);\n\n// filter เฉพาะ user คนนี้\nconst userRows = rows.filter(r => r.UserID === userId);\n\nif (userRows.length === 0) {\n  return [{ json: { replyToken, replyMessage: 'ยังไม่มีรายการของคุณในระบบ\\nลองบันทึกรายการก่อนเลย เช่น: ข้าวมันไก่ 45' } }];\n}\n\nlet totalIncome = 0;\nlet totalExpense = 0;\nconst categoryExpense = {};\nconst categoryIncome = {};\n\nfor (const row of userRows) {\n  const amount = parseFloat(row.Amount) || 0;\n  const category = row.Category || 'อื่น ๆ';\n  if (row.Type === 'รายรับ') {\n    totalIncome += amount;\n    categoryIncome[category] = (categoryIncome[category] || 0) + amount;\n  } else {\n    totalExpense += amount;\n    categoryExpense[category] = (categoryExpense[category] || 0) + amount;\n  }\n}\n\nconst balance = totalIncome - totalExpense;\n\nlet expenseLines = Object.entries(categoryExpense)\n  .sort((a, b) => b[1] - a[1])\n  .map(([cat, amt]) => `  • ${cat}: ${amt.toLocaleString()} บาท`)\n  .join('\\n');\n\nlet incomeLines = Object.entries(categoryIncome)\n  .sort((a, b) => b[1] - a[1])\n  .map(([cat, amt]) => `  • ${cat}: ${amt.toLocaleString()} บาท`)\n  .join('\\n');\n\nlet replyMessage = `📊 สรุปรายการทั้งหมดของคุณ\\n`;\nreplyMessage += `(${userRows.length} รายการ)\\n\\n`;\n\nif (incomeLines) {\n  replyMessage += `💰 รายรับ: ${totalIncome.toLocaleString()} บาท\\n${incomeLines}\\n\\n`;\n}\nif (expenseLines) {\n  replyMessage += `💸 รายจ่าย: ${totalExpense.toLocaleString()} บาท\\n${expenseLines}\\n\\n`;\n}\n\nreplyMessage += `${balance >= 0 ? '✅' : '⚠️'} ยอดคงเหลือ: ${balance.toLocaleString()} บาท`;\n\nreturn [{ json: { replyToken, replyMessage } }];"
+      },
+      "id": "b09b4f1f-9d12-47b0-8f57-48a64959982f",
+      "name": "Calculate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4192,
+        3008
+      ]
+    },
+    {
+      "parameters": {
+        "replyToken": "={{ $('Line Messaging Trigger').first().json.replyToken }}",
+        "messages": {
+          "values": [
+            {
+              "text": "={{ $('Extract Type & Category').first().json.replyMessage }}"
+            }
+          ]
+        }
+      },
+      "id": "d73520f3-d7a7-4aff-b0bc-ce8cb9933ae5",
+      "name": "Reply Record",
+      "type": "@aotoki/n8n-nodes-line-messaging.lineMessaging",
+      "typeVersion": 1,
+      "position": [
+        4448,
+        3200
+      ],
+      "credentials": {
+        "lineMessagingApi": {
+          "id": "6sRcG3QbhxlVeV1p",
+          "name": "Line Messaging account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "replyToken": "={{ $('Line Messaging Trigger').first().json.replyToken }}",
+        "messages": {
+          "values": [
+            {
+              "text": "={{ $json.replyMessage }}"
+            }
+          ]
+        }
+      },
+      "id": "e0d36309-f749-4aa9-9dd4-f457282742ab",
+      "name": "Reply Summary",
+      "type": "@aotoki/n8n-nodes-line-messaging.lineMessaging",
+      "typeVersion": 1,
+      "position": [
+        4432,
+        3008
+      ],
+      "credentials": {
+        "lineMessagingApi": {
+          "id": "6sRcG3QbhxlVeV1p",
+          "name": "Line Messaging account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "replyToken": "={{ $('Line Messaging Trigger').first().json.replyToken }}",
+        "messages": {
+          "values": [
+            {
+              "text": "={{ $json.replyMessage }}"
+            }
+          ]
+        }
+      },
+      "id": "8627f43e-0c0d-4f06-a617-af0459bcee5c",
+      "name": "Reply Help",
+      "type": "@aotoki/n8n-nodes-line-messaging.lineMessaging",
+      "typeVersion": 1,
+      "position": [
+        3904,
+        3616
+      ],
+      "credentials": {
+        "lineMessagingApi": {
+          "id": "6sRcG3QbhxlVeV1p",
+          "name": "Line Messaging account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Line Messaging Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message": {
+      "main": [
+        [
+          {
+            "node": "Route Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Intent": {
+      "main": [
+        [
+          {
+            "node": "Switch Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Intent": {
+      "main": [
+        [
+          {
+            "node": "Read Transactions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Help Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Transactions": {
+      "main": [
+        [
+          {
+            "node": "Calculate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Summary": {
+      "main": [
+        [
+          {
+            "node": "Reply Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Help Message": {
+      "main": [
+        [
+          {
+            "node": "Reply Help",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Extract Type & Category",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Type & Category": {
+      "main": [
+        [
+          {
+            "node": "Append Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Reply Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "955171ae-2028-43b4-8b12-0ae4ce8b63fa",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "de602d0b0bf1bbb6fdf7f1290733b0a5d72921291ee113e1a7a492d730612cd8"
+  },
+  "id": "sacyLuGpFTD8R3l-Jw1p8",
+  "tags": []
+}
